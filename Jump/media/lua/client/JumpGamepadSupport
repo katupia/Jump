@@ -1,0 +1,72 @@
+require "JumpInteraction"
+
+if getActivatedMods():contains("WookieeGamepadSupport") then return end
+
+JumpGamepad = JumpGamepad or {}
+
+JumpGamepad.addJumpPrompt = function()
+
+    if not (getPlayer() and getPlayer():isAlive()) then return end
+
+    Events.OnTick.Remove(JumpGamepad.addJumpPrompt)
+
+    if JumpGamepad.hasPatchedJump then return end
+
+    JumpGamepad.activate = function(joypadData, jumpData)
+        local button = jumpData.button
+        if button == Joypad.AButton or button == Joypad.BButton then
+            local player = getSpecificPlayer(joypadData.player)
+            ISTimedActionQueue.clear(player)
+            ISTimedActionQueue.add(ISJumpAction:new(player, jumpData.target));
+        end
+    end
+
+    JumpGamepad.ISButtonPrompt = JumpGamepad.ISButtonPrompt or {}
+
+    JumpGamepad.ISButtonPrompt.getBestAButtonAction = ISButtonPrompt.getBestAButtonAction
+
+    function ISButtonPrompt:getBestAButtonAction(direction)
+
+        -- Must not reference ISButtonPrompt.getBestAButtonAction because this will cause an infinite loop.
+        JumpGamepad.ISButtonPrompt.getBestAButtonAction(self, direction)
+
+        -- Someone needs to be alive or this should not be attempted.
+        if not self.player then return end
+
+        local player = getSpecificPlayer(self.player)
+
+        if self.aPrompt or not player or not player:isAlive() then return end
+
+        local square = player:getSquare()
+
+        if not square then return end
+
+        if not player:hasTimedActions() and not square:HasStairs() and not JumpI.isHealthInhibitingJump(player) then
+            local playerOrientationAngle = player:getAnimAngleRadians();--Hum, this is angle 0 = East, PI/2 = South, -PI/2=North, PI=West
+        
+            local targetDistance = 1.5--todo compute distance from skills and traits
+            local targetX = player:getX()+ math.cos(playerOrientationAngle) * targetDistance
+            local targetY = player:getY()+ math.sin(playerOrientationAngle) * targetDistance
+            local targetSquareValidForJump = JumpI.isValidjumpTarget(targetX, targetY, player:getZ())
+            local playerCanJump = targetSquareValidForJump and (player:isRunning() or player:isSprinting())
+
+            if playerCanJump then
+                local target = {
+                    x = targetX, y = targetY, z = player:getZ()
+                }          
+                JumpI.inhibit = true
+                -- Could use getText("UI_EN_Jump") and make a translation or something.
+                self:setAPrompt("Jump", JumpGamepad.activate, {button = Joypad.AButton, target = target})
+            else
+                self:setAPrompt(nil, nil, nil)
+            end
+        else
+            self:setAPrompt(nil, nil, nil)
+        end
+    end
+
+    JumpGamepad.hasPatchedJump = true
+
+end
+
+Events.OnGameStart.Add(JumpGamepad.addJumpPrompt)
